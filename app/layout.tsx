@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import "./globals.css";
+import BarLinks from "./components/BarLinks";
+import type { L } from "@/lib/cartui";
 
 export const metadata: Metadata = {
   title: "Smart Shop Online Shopping",
@@ -8,10 +10,14 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const lang = (await cookies()).get("lang")?.value ?? "en";
+  const v = (await cookies()).get("lang")?.value;
+  const lang: L = v === "ro" || v === "ur" ? v : "en";
   return (
     <html lang={lang === "ur" ? "ur" : "en"} dir={lang === "ur" ? "rtl" : "ltr"}>
-      <body>{children}</body>
+      <body>
+        <BarLinks lang={lang} />
+        {children}
+      </body>
     </html>
   );
 }
