@@ -136,9 +136,7 @@ export default function Admin() {
       )}
 
       {ready && isAdmin && (
-        <>
-          <div className="row"><button onClick={logout}>Log out</button></div>
-          <div className="card">
+        <div className="row"><button onClick={logout}>Log out</button><a className="btn" href="/admin/orders">Orders</a></div>
             <h2>Add product</h2>
             <label>Product name</label>
             <input value={f.name} onChange={(e) => set("name", e.target.value)} />
