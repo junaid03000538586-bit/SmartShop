@@ -6,6 +6,19 @@ import { useCart, writeCart } from "@/lib/cart";
 
 type Rate = { city: string | null; charge: number };
 
+const SLOW_LOAD = "The server did not answer. Please check your internet and refresh the page.";
+const SLOW_ORDER = "The server is slow. Please wait a moment and press Place order again. The same order will not be placed twice.";
+
+function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
+}
+
 export default function CheckoutView({ lang }: { lang: L }) {
   const t = k[lang];
   const [items, ready] = useCart();
@@ -18,17 +31,31 @@ export default function CheckoutView({ lang }: { lang: L }) {
 
   useEffect(() => {
     (async () => {
-      const { data: s } = await supabase.auth.getSession();
-      const id = s.session?.user.id ?? null;
-      setUid(id);
-      if (id) {
-        const { data: p } = await supabase.from("profiles").select("full_name,phone").eq("id", id).maybeSingle();
-        if (p) setF((o) => ({ ...o, name: p.full_name ?? "", phone: p.phone ?? "" }));
+      let id: string | null = null;
+      try {
+        const { data: s } = await withTimeout(supabase.auth.getSession(), 15000);
+        id = s.session?.user.id ?? null;
+      } catch {
+        setErr(SLOW_LOAD);
       }
-      const { data: d } = await supabase.from("delivery_settings").select("city,charge");
-      setRates((d ?? []).map((r) => ({ city: r.city, charge: Number(r.charge) })));
-      const { data: th } = await supabase.from("store_settings").select("value").eq("key", "free_delivery_threshold").maybeSingle();
-      setFree(Number(th?.value) || 0);
+      setUid(id);
+      if (!id) return;
+      try {
+        const { data: p } = await withTimeout(
+          supabase.from("profiles").select("full_name,phone").eq("id", id).maybeSingle(),
+          15000
+        );
+        if (p) setF((o) => ({ ...o, name: p.full_name ?? "", phone: p.phone ?? "" }));
+        const { data: d } = await withTimeout(supabase.from("delivery_settings").select("city,charge"), 15000);
+        setRates((d ?? []).map((r) => ({ city: r.city, charge: Number(r.charge) })));
+        const { data: th } = await withTimeout(
+          supabase.from("store_settings").select("value").eq("key", "free_delivery_threshold").maybeSingle(),
+          15000
+        );
+        setFree(Number(th?.value) || 0);
+      } catch {
+        setErr(SLOW_LOAD);
+      }
     })();
   }, []);
 
@@ -41,19 +68,43 @@ export default function CheckoutView({ lang }: { lang: L }) {
 
   async function place(e: React.FormEvent) {
     e.preventDefault();
-    setErr(""); setBusy(true);
-    let key = sessionStorage.getItem("ss_idem");
-    if (!key) { key = crypto.randomUUID(); sessionStorage.setItem("ss_idem", key); }
-    const { data, error } = await supabase.rpc("place_order", {
-      p_items: items.map((i) => ({ product_id: i.productId, quantity: i.qty, size: i.size, color: i.color })),
-      p_full_name: f.name, p_phone: f.phone, p_whatsapp: f.wa, p_city: f.city,
-      p_address: f.address, p_postal_code: f.postal, p_notes: f.notes,
-      p_payment_method: "cod", p_idempotency_key: key,
-    });
-    if (error || !data) { setErr(error?.message ?? "Error"); setBusy(false); return; }
-    sessionStorage.removeItem("ss_idem");
-    writeCart([], false);
-    window.location.href = "/order/" + (data as { order_number: string }).order_number;
+    if (busy) return;
+    setErr("");
+    setBusy(true);
+    try {
+      let key = sessionStorage.getItem("ss_idem");
+      if (!key) {
+        key = crypto.randomUUID();
+        sessionStorage.setItem("ss_idem", key);
+      }
+      const { data, error } = await withTimeout(
+        supabase.rpc("place_order", {
+          p_items: items.map((i) => ({ product_id: i.productId, quantity: i.qty, size: i.size, color: i.color })),
+          p_full_name: f.name,
+          p_phone: f.phone,
+          p_whatsapp: f.wa,
+          p_city: f.city,
+          p_address: f.address,
+          p_postal_code: f.postal,
+          p_notes: f.notes,
+          p_payment_method: "cod",
+          p_idempotency_key: key,
+        }),
+        25000
+      );
+      if (error || !data) {
+        sessionStorage.removeItem("ss_idem");
+        setErr(error?.message ?? "Something went wrong. Please try again.");
+        return;
+      }
+      sessionStorage.removeItem("ss_idem");
+      writeCart([], false);
+      window.location.href = "/order/" + (data as { order_number: string }).order_number;
+    } catch {
+      setErr(SLOW_ORDER);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const css = (
@@ -68,24 +119,54 @@ export default function CheckoutView({ lang }: { lang: L }) {
     `}</style>
   );
 
-  if (!ready || uid === undefined) return <main className="wrap co">{css}<p>{t.loading}</p></main>;
+  if (!ready || uid === undefined)
+    return (
+      <main className="wrap co">
+        {css}
+        <p>{t.loading}</p>
+      </main>
+    );
+
   if (uid === null)
-    return <main className="wrap co">{css}<h2>{t.title}</h2><p>{t.needLogin}</p><a className="btn" href="/login">{t.login}</a></main>;
+    return (
+      <main className="wrap co">
+        {css}
+        <h2>{t.title}</h2>
+        {err && <div className="bad">{err}</div>}
+        <p>{t.needLogin}</p>
+        <a className="btn" href="/login?next=/checkout">{t.login}</a>
+      </main>
+    );
+
   if (items.length === 0)
-    return <main className="wrap co">{css}<h2>{t.title}</h2><p className="muted">{t.empty}</p><a className="btn" href="/">{t.shop}</a></main>;
+    return (
+      <main className="wrap co">
+        {css}
+        <h2>{t.title}</h2>
+        <p className="muted">{t.empty}</p>
+        <a className="btn" href="/">{t.shop}</a>
+      </main>
+    );
 
   return (
     <main className="wrap co" style={{ maxWidth: 560 }}>
       {css}
       <h2>{t.title}</h2>
       <form onSubmit={place}>
-        <label>{t.name}</label><input value={f.name} onChange={(e) => set("name", e.target.value)} autoComplete="name" required />
-        <label>{t.phone}</label><input type="tel" inputMode="tel" value={f.phone} onChange={(e) => set("phone", e.target.value)} autoComplete="tel" required />
-        <label>{t.whatsapp}</label><input type="tel" inputMode="tel" value={f.wa} onChange={(e) => set("wa", e.target.value)} />
-        <label>{t.city}</label><input value={f.city} onChange={(e) => set("city", e.target.value)} autoComplete="address-level2" required />
-        <label>{t.address}</label><textarea rows={3} value={f.address} onChange={(e) => set("address", e.target.value)} autoComplete="street-address" required />
-        <label>{t.postal}</label><input value={f.postal} onChange={(e) => set("postal", e.target.value)} autoComplete="postal-code" />
-        <label>{t.notes}</label><textarea rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+        <label>{t.name}</label>
+        <input value={f.name} onChange={(e) => set("name", e.target.value)} autoComplete="name" required />
+        <label>{t.phone}</label>
+        <input type="tel" inputMode="tel" value={f.phone} onChange={(e) => set("phone", e.target.value)} autoComplete="tel" required />
+        <label>{t.whatsapp}</label>
+        <input type="tel" inputMode="tel" value={f.wa} onChange={(e) => set("wa", e.target.value)} />
+        <label>{t.city}</label>
+        <input value={f.city} onChange={(e) => set("city", e.target.value)} autoComplete="address-level2" required />
+        <label>{t.address}</label>
+        <textarea rows={3} value={f.address} onChange={(e) => set("address", e.target.value)} autoComplete="street-address" required />
+        <label>{t.postal}</label>
+        <input value={f.postal} onChange={(e) => set("postal", e.target.value)} autoComplete="postal-code" />
+        <label>{t.notes}</label>
+        <textarea rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
         <div className="box">
           <strong>{t.payment}</strong>
           <div>✓ {t.cod}</div>
@@ -94,8 +175,11 @@ export default function CheckoutView({ lang }: { lang: L }) {
         <div className="box">
           <strong>{t.summary}</strong>
           {items.map((i) => (
-            <div className="r" key={i.productId + (i.size ?? "") + (i.color ?? "")}>
-              <span>{i.name}{(i.size || i.color) ? ` (${[i.size, i.color].filter(Boolean).join(", ")})` : ""} × {i.qty}</span>
+            <div className="r" key={i.productId + "|" + (i.size ?? "") + "|" + (i.color ?? "")}>
+              <span>
+                {i.name}
+                {i.size || i.color ? ` (${[i.size, i.color].filter(Boolean).join(", ")})` : ""} × {i.qty}
+              </span>
               <span>{rs(i.price * i.qty)}</span>
             </div>
           ))}
