@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
-import { LANGS, type Lang } from "@/lib/i18n";
+import { LANGS, t, type Lang } from "@/lib/i18n";
 import { setLang } from "../actions";
 
 export default async function Top() {
   const lang = ((await cookies()).get("lang")?.value ?? "en") as Lang;
+  const ph = (t[lang] ?? t.en).search;
   return (
     <>
       <style>{`
@@ -14,6 +15,7 @@ export default async function Top() {
         .badge{display:inline-block;padding:2px 12px;border-radius:999px;background:#c9a24b;color:#0b1f3a;font-weight:700;margin-inline-start:8px}
         .stock-ok{color:#1f8f4e;font-weight:600}.stock-out{color:#b42318;font-weight:600}
         .back{display:inline-block;margin:16px 0}
+        .tsearch{width:100%;margin:0}
       `}</style>
       <header className="top">
         <div className="wrap">
@@ -22,6 +24,9 @@ export default async function Top() {
             {LANGS.map((l) => (
               <button key={l.code} name="lang" value={l.code} aria-pressed={lang === l.code}>{l.label}</button>
             ))}
+          </form>
+          <form className="tsearch" method="get" action="/search">
+            <input className="search" type="search" name="q" placeholder={ph} aria-label={ph} />
           </form>
         </div>
       </header>
