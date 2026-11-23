@@ -80,7 +80,6 @@ export default async function Home() {
       </main>
 
       {wa && <a className="wa" href={`https://wa.me/${wa}`}>{tx.whatsapp}</a>}
-      <footer><div className="wrap">{tx.footer}</div></footer>
     </>
   );
 }
