@@ -30,6 +30,7 @@ export default function Admin() {
   const [prods, setProds] = useState<Prod[]>([]);
   const [f, setF] = useState({ name: "", sku: "", cat: "", price: "", old: "", stock: "", sizes: "", colors: "", desc: "", feat: false, isNew: false, best: false });
   const [files, setFiles] = useState<File[]>([]);
+  const [fileKey, setFileKey] = useState(0);
 
   const load = useCallback(async () => {
     const c = await supabase.from("categories").select("id,name").order("sort_order");
@@ -85,7 +86,7 @@ export default function Admin() {
       } catch (e) { setMsg("Product saved, but image " + (i + 1) + " failed: " + (e as Error).message); }
     }
     setF({ name: "", sku: "", cat: "", price: "", old: "", stock: "", sizes: "", colors: "", desc: "", feat: false, isNew: false, best: false });
-    setFiles([]); setBusy(false);
+    setFiles([]); setFileKey((k) => k + 1); setBusy(false);
     setMsg((m) => (m.startsWith("Product saved") ? m : "Product added."));
     await load();
   }
@@ -120,6 +121,7 @@ export default function Admin() {
         .adm .chk{display:flex;align-items:center;gap:8px;min-height:44px}
         .adm .chk input{width:24px;min-height:24px;margin:0}
         .adm .msg{background:#fbf3dc;border-radius:12px;padding:10px 14px;margin:12px 0}
+        .adm a.ord{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;border-radius:999px;background:#c9a24b;color:#0b1f3a;font-weight:600;text-decoration:none}
       `}</style>
       <h1>Smart Shop Admin</h1>
       {msg && <div className="msg">{msg}</div>}
@@ -136,7 +138,12 @@ export default function Admin() {
       )}
 
       {ready && isAdmin && (
-        <div className="row"><button onClick={logout}>Log out</button><a className="btn" href="/admin/orders">Orders</a></div>
+        <>
+          <div className="row">
+            <button onClick={logout}>Log out</button>
+            <a className="ord" href="/admin/orders">Orders</a>
+          </div>
+          <div className="card">
             <h2>Add product</h2>
             <label>Product name</label>
             <input value={f.name} onChange={(e) => set("name", e.target.value)} />
@@ -162,7 +169,7 @@ export default function Admin() {
             <div className="chk"><input type="checkbox" checked={f.isNew} onChange={(e) => set("isNew", e.target.checked)} />New arrival</div>
             <div className="chk"><input type="checkbox" checked={f.best} onChange={(e) => set("best", e.target.checked)} />Best seller</div>
             <label>Photos (choose from gallery)</label>
-            <input type="file" accept="image/*" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+            <input key={fileKey} type="file" accept="image/*" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
             {files.length > 0 && <p>{files.length} photo(s) selected</p>}
             <button className="gold" disabled={busy} onClick={addProduct}>{busy ? "Please wait…" : "Save product"}</button>
           </div>
@@ -185,4 +192,4 @@ export default function Admin() {
       )}
     </main>
   );
-        }
+}
