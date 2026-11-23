@@ -5,6 +5,23 @@ import { ui, type L } from "@/lib/ui";
 
 type Mode = "login" | "register" | "forgot" | "recover";
 
+const SLOW = "The server did not answer. Please check your internet and try again.";
+
+function withTimeout<T>(p: PromiseLike<T>, ms = 15000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
+}
+
+function nextPath(): string | null {
+  const n = new URLSearchParams(window.location.search).get("next");
+  return n && n.startsWith("/") && !n.startsWith("//") ? n : null;
+}
+
 export default function LoginForm({ lang }: { lang: L }) {
   const t = ui[lang] ?? ui.en;
   const [mode, setMode] = useState<Mode>("login");
@@ -26,6 +43,13 @@ export default function LoginForm({ lang }: { lang: L }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (user && mode !== "recover") {
+      const n = nextPath();
+      if (n) window.location.href = n;
+    }
+  }, [user, mode]);
+
   function go(m: Mode) { setMode(m); setErr(""); setMsg(""); }
 
   async function submit(e: React.FormEvent) {
@@ -37,28 +61,35 @@ export default function LoginForm({ lang }: { lang: L }) {
     }
     if ((mode === "register" || mode === "recover") && password.length < 8) return setErr(t.passwordShort);
     setBusy(true);
-    if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) setErr(error.message);
-      setPassword("");
-    } else if (mode === "register") {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(), password,
-        options: { data: { full_name: name.trim(), phone: phone.trim() } },
-      });
-      if (error) setErr(error.message);
-      else if (!data.session) { setMsg(t.checkEmail); setMode("login"); }
-      setPassword("");
-    } else if (mode === "forgot") {
-      await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin + "/login" });
-      setMsg(t.resetSent);
-    } else {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) setErr(error.message);
-      else { setMsg(t.passwordSaved); setMode("login"); }
-      setPassword("");
+    try {
+      if (mode === "login") {
+        const { error } = await withTimeout(supabase.auth.signInWithPassword({ email: email.trim(), password }));
+        if (error) setErr(error.message);
+        setPassword("");
+      } else if (mode === "register") {
+        const { data, error } = await withTimeout(
+          supabase.auth.signUp({
+            email: email.trim(), password,
+            options: { data: { full_name: name.trim(), phone: phone.trim() } },
+          })
+        );
+        if (error) setErr(error.message);
+        else if (!data.session) { setMsg(t.checkEmail); setMode("login"); }
+        setPassword("");
+      } else if (mode === "forgot") {
+        await withTimeout(supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin + "/login" }));
+        setMsg(t.resetSent);
+      } else {
+        const { error } = await withTimeout(supabase.auth.updateUser({ password }));
+        if (error) setErr(error.message);
+        else { setMsg(t.passwordSaved); setMode("login"); }
+        setPassword("");
+      }
+    } catch {
+      setErr(SLOW);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   const css = (
