@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { getSupabase } from "@/lib/supabase";
-import { LANGS, t, type Lang } from "@/lib/i18n";
-import { setLang } from "./actions";
+import { t, type Lang } from "@/lib/i18n";
+import Top from "./components/Top";
+import ProductCard from "./components/ProductCard";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function Home() {
     db.from("categories").select("id,name,name_ro,name_ur,slug").order("sort_order"),
     db.from("products")
       .select("id,name,slug,price,original_price,stock,product_images(url,sort_order)")
+      .eq("is_visible", true)
       .order("created_at", { ascending: false }).limit(8),
     db.from("store_settings").select("value").eq("key", "whatsapp_number").maybeSingle(),
   ]);
@@ -24,19 +26,7 @@ export default async function Home() {
 
   return (
     <>
-      <header className="top">
-        <div className="wrap">
-          <a className="brand" href="/">Smart Shop</a>
-          <form action={setLang} className="langs">
-            {LANGS.map((l) => (
-              <button key={l.code} name="lang" value={l.code} aria-pressed={lang === l.code}>
-                {l.label}
-              </button>
-            ))}
-          </form>
-          <input className="search" type="search" placeholder={tx.search} aria-label={tx.search} />
-        </div>
-      </header>
+      <Top />
 
       <section className="hero">
         <div className="wrap">
@@ -57,22 +47,7 @@ export default async function Home() {
         <h2 id="new">{tx.newArrivals}</h2>
         {products && products.length > 0 ? (
           <div className="grid">
-            {products.map((p) => {
-              const img = [...(p.product_images ?? [])].sort((a, b) => a.sort_order - b.sort_order)[0];
-              return (
-                <a key={p.id} className="card" href={`/product/${p.slug}`}>
-                  {img ? <img src={img.url} alt={p.name} loading="lazy" /> : <div className="ph" />}
-                  <div className="body">
-                    <div>{p.name}</div>
-                    <div className="price">
-                      Rs. {Number(p.price).toLocaleString("en-PK")}
-                      {p.original_price && <span className="old">Rs. {Number(p.original_price).toLocaleString("en-PK")}</span>}
-                    </div>
-                    {p.stock < 1 && <div className="muted">{tx.outOfStock}</div>}
-                  </div>
-                </a>
-              );
-            })}
+            {products.map((p) => <ProductCard key={p.id} p={p} outLabel={tx.outOfStock} />)}
           </div>
         ) : (
           <p className="muted">{tx.empty}</p>
