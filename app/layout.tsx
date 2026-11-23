@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import "./globals.css";
 import BarLinks from "./components/BarLinks";
+import Footer from "./components/Footer";
 import type { L } from "@/lib/cartui";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <BarLinks lang={lang} />
         {children}
+        <Footer />
       </body>
     </html>
   );
