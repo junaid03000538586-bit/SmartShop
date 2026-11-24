@@ -2,8 +2,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const links: [string, string][] = [
     ["/admin", "Products"],
     ["/admin/orders", "Orders"],
+    ["/admin/stock", "Stock"],
     ["/admin/banners", "Banners"],
     ["/admin/logo", "Logo"],
+    ["/admin/import", "Import"],
     ["/admin/settings", "Settings"],
   ];
   return (
