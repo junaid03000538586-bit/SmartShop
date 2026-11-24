@@ -3,6 +3,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ["/admin", "Products"],
     ["/admin/orders", "Orders"],
     ["/admin/banners", "Banners"],
+    ["/admin/logo", "Logo"],
     ["/admin/settings", "Settings"],
   ];
   return (
