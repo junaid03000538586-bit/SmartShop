@@ -26,7 +26,7 @@ export default function BarLinks({ lang }: { lang: L }) {
         .bar a{display:inline-flex;align-items:center;gap:6px;min-height:44px;color:#c9a24b;font-weight:600}
         .bar .n{background:#c9a24b;color:#0b1f3a;border-radius:999px;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.8rem}
       `}</style>
-      <a href="/login">{logged ? t.account : t.login}</a>
+      <a href={logged ? "/account" : "/login"}>{logged ? t.account : t.login}</a>
       <a href="/cart">{t.cart}{count > 0 && <span className="n">{count}</span>}</a>
     </div>
   );
