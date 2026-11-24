@@ -16,14 +16,14 @@ type Order = {
   id: string; order_number: string; status: string; customer_name: string; phone: string;
   whatsapp: string | null; city: string; address: string; postal_code: string | null;
   notes: string | null; payment_method: string; subtotal: number; delivery_charge: number;
-  total: number; created_at: string;
+  total: number; created_at: string; archived: boolean;
 };
 type Line = {
   id: string; product_name: string; sku: string | null; quantity: number;
   size: string | null; color: string | null; unit_price: number; line_total: number;
 };
 type Note = { id: string; note: string; created_at: string };
-type Stats = { total: number; nw: number; processing: number; delivered: number; cancelled: number; products: number; low: number };
+type Stats = { total: number; nw: number; processing: number; delivered: number; cancelled: number; archived: number; products: number; low: number };
 
 const rs = (n: number) => "Rs. " + Number(n).toLocaleString("en-PK");
 const when = (s: string) => new Date(s).toLocaleString("en-PK", { timeZone: "Asia/Karachi", dateStyle: "medium", timeStyle: "short" });
@@ -32,6 +32,15 @@ function waDigits(raw: string) {
   if (d.startsWith("92")) return d;
   if (d.startsWith("0")) return "92" + d.slice(1);
   return d;
+}
+function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error("The server did not answer. Please try again.")), ms);
+    p.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
 }
 
 export default function AdminOrders() {
@@ -43,6 +52,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [view, setView] = useState<"active" | "archived" | "all">("active");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -51,23 +61,27 @@ export default function AdminOrders() {
   const [noteText, setNoteText] = useState("");
 
   const loadStats = useCallback(async () => {
-    const count = async (st?: string) => {
+    const count = async (st?: string, archived?: boolean) => {
       let q = supabase.from("orders").select("id", { count: "exact", head: true });
       if (st) q = q.eq("status", st);
+      if (archived !== undefined) q = q.eq("archived", archived);
       const { count: c } = await q;
       return c ?? 0;
     };
-    const [total, nw, processing, delivered, cancelled] = await Promise.all([
-      count(), count("new"), count("processing"), count("delivered"), count("cancelled"),
+    const [total, nw, processing, delivered, cancelled, archived] = await Promise.all([
+      count(undefined, false), count("new", false), count("processing", false),
+      count("delivered", false), count("cancelled", false), count(undefined, true),
     ]);
     const p = await supabase.from("products").select("stock,low_stock_threshold", { count: "exact" }).limit(1000);
     const low = (p.data ?? []).filter((r: { stock: number; low_stock_threshold: number }) => r.stock <= r.low_stock_threshold).length;
-    setStats({ total, nw, processing, delivered, cancelled, products: p.count ?? 0, low });
+    setStats({ total, nw, processing, delivered, cancelled, archived, products: p.count ?? 0, low });
   }, []);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
     let q = supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(100);
+    if (view === "active") q = q.eq("archived", false);
+    if (view === "archived") q = q.eq("archived", true);
     if (status) q = q.eq("status", status);
     if (from) q = q.gte("created_at", new Date(from + "T00:00:00+05:00").toISOString());
     if (to) q = q.lt("created_at", new Date(new Date(to + "T00:00:00+05:00").getTime() + 86400000).toISOString());
@@ -77,17 +91,23 @@ export default function AdminOrders() {
     if (error) setMsg(error.message);
     setOrders((data as Order[]) ?? []);
     setLoading(false);
-  }, [status, from, to, search]);
+  }, [view, status, from, to, search]);
 
   useEffect(() => {
     (async () => {
-      const { data: s } = await supabase.auth.getSession();
-      if (s.session) {
-        const { data } = await supabase.rpc("is_admin");
-        setIsAdmin(data === true);
-        if (data === true) loadStats();
+      try {
+        const { data: s } = await withTimeout(supabase.auth.getSession(), 15000);
+        if (s.session) {
+          const { data, error } = await withTimeout(supabase.rpc("is_admin"), 15000);
+          if (error) setMsg(error.message);
+          setIsAdmin(data === true);
+          if (data === true) loadStats();
+        }
+      } catch (e) {
+        setMsg((e as Error).message);
+      } finally {
+        setReady(true);
       }
-      setReady(true);
     })();
   }, [loadStats]);
 
@@ -115,6 +135,27 @@ export default function AdminOrders() {
     loadStats();
   }
 
+  async function setArchived(o: Order, value: boolean) {
+    const { error } = await supabase.from("orders").update({ archived: value }).eq("id", o.id);
+    setMsg(error ? error.message : value ? "Order archived." : "Order moved back to active.");
+    setOpen(null);
+    await loadOrders();
+    loadStats();
+  }
+
+  async function archiveFinished() {
+    if (!confirm("Archive all delivered and cancelled orders? They will not be deleted. You can still find them under Archived.")) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ archived: true })
+      .in("status", ["delivered", "cancelled"])
+      .eq("archived", false);
+    setMsg(error ? error.message : "Delivered and cancelled orders were archived.");
+    setOpen(null);
+    await loadOrders();
+    loadStats();
+  }
+
   async function addNote() {
     const text = noteText.trim();
     if (!text || !open) return;
@@ -132,7 +173,7 @@ export default function AdminOrders() {
       .ao h1{font-family:Georgia,serif;color:#0b1f3a}
       .ao input,.ao select,.ao textarea{width:100%;min-height:48px;padding:10px 14px;margin:6px 0 10px;border:1px solid #cfcac0;border-radius:12px;font:inherit;background:#fff}
       .ao button,.ao a.b{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:0;border-radius:999px;background:#0b1f3a;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
-      .ao .gold{background:#c9a24b;color:#0b1f3a}.ao .green{background:#1f8f4e}
+      .ao .gold{background:#c9a24b;color:#0b1f3a}.ao .green{background:#1f8f4e}.ao .grey{background:#6b7280}
       .ao .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:12px 0}
       .ao .stat{background:#fff;border:1px solid #eceae4;border-radius:14px;padding:10px}
       .ao .stat b{display:block;font-size:1.4rem;color:#0b1f3a}
@@ -151,6 +192,7 @@ export default function AdminOrders() {
     return (
       <main className="ao">{css}
         <h1>Orders</h1>
+        {msg && <div className="msg">{msg}</div>}
         <p>Please log in as admin first.</p>
         <a className="b gold" href="/admin">Go to admin login</a>
       </main>
@@ -160,23 +202,32 @@ export default function AdminOrders() {
     <main className="ao">
       {css}
       <h1>Orders</h1>
-      <div className="row"><a className="b" href="/admin">← Products</a><button onClick={() => { loadOrders(); loadStats(); }}>Refresh</button></div>
+      <div className="row">
+        <button onClick={() => { loadOrders(); loadStats(); }}>Refresh</button>
+        <button className="grey" onClick={archiveFinished}>Archive delivered and cancelled</button>
+      </div>
       {msg && <div className="msg">{msg}</div>}
 
       {stats && (
         <div className="stats">
-          <div className="stat"><b>{stats.total}</b>Total orders</div>
+          <div className="stat"><b>{stats.total}</b>Active orders</div>
           <div className="stat"><b>{stats.nw}</b>New</div>
           <div className="stat"><b>{stats.processing}</b>Processing</div>
           <div className="stat"><b>{stats.delivered}</b>Delivered</div>
           <div className="stat"><b>{stats.cancelled}</b>Cancelled</div>
+          <div className="stat"><b>{stats.archived}</b>Archived</div>
           <div className="stat"><b>{stats.products}</b>Products</div>
           <div className="stat"><b>{stats.low}</b>Low stock</div>
         </div>
       )}
 
       <div className="card">
-        <input type="search" placeholder="Search order no., name or phone" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="row">
+          <button className={view === "active" ? "gold" : ""} onClick={() => setView("active")}>Active</button>
+          <button className={view === "archived" ? "gold" : ""} onClick={() => setView("archived")}>Archived</button>
+          <button className={view === "all" ? "gold" : ""} onClick={() => setView("all")}>All</button>
+        </div>
+        <input type="search" style={{ marginTop: 12 }} placeholder="Search order no., name or phone" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
@@ -193,7 +244,10 @@ export default function AdminOrders() {
       {orders.map((o) => (
         <div className="card" key={o.id}>
           <div onClick={() => toggle(o)} style={{ cursor: "pointer" }}>
-            <div className="between"><strong>{o.order_number}</strong><span className="pill" style={{ background: COLOR[o.status] }}>{LABEL[o.status] ?? o.status}</span></div>
+            <div className="between">
+              <strong>{o.order_number}{o.archived ? " · Archived" : ""}</strong>
+              <span className="pill" style={{ background: COLOR[o.status] }}>{LABEL[o.status] ?? o.status}</span>
+            </div>
             <div>{o.customer_name} · {o.city}</div>
             <div className="between"><span className="muted">{when(o.created_at)}</span><strong>{rs(o.total)}</strong></div>
           </div>
@@ -233,6 +287,12 @@ export default function AdminOrders() {
               {notes.map((n) => (
                 <div className="note" key={n.id}>{n.note}<br /><small className="muted">{when(n.created_at)}</small></div>
               ))}
+
+              <div style={{ marginTop: 16 }}>
+                {o.archived
+                  ? <button className="grey" onClick={() => setArchived(o, false)}>Move back to active</button>
+                  : <button className="grey" onClick={() => setArchived(o, true)}>Archive this order</button>}
+              </div>
             </div>
           )}
         </div>
