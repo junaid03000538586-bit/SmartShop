@@ -1,10 +1,26 @@
 import { cookies } from "next/headers";
 import { LANGS, t, type Lang } from "@/lib/i18n";
+import { getSupabase } from "@/lib/supabase";
 import { setLang } from "../actions";
 
 export default async function Top() {
   const lang = ((await cookies()).get("lang")?.value ?? "en") as Lang;
   const ph = (t[lang] ?? t.en).search;
+
+  let name = "Smart Shop";
+  let logo = "";
+  try {
+    const { data } = await getSupabase()
+      .from("store_settings")
+      .select("key,value")
+      .in("key", ["store_name", "store_logo_url"]);
+    for (const r of data ?? []) {
+      const v = String(r.value ?? "").trim();
+      if (r.key === "store_name" && v) name = v;
+      if (r.key === "store_logo_url" && /^https:\/\/[^\s"'<>]+$/.test(v)) logo = v;
+    }
+  } catch {}
+
   return (
     <>
       <style>{`
@@ -16,10 +32,15 @@ export default async function Top() {
         .stock-ok{color:#1f8f4e;font-weight:600}.stock-out{color:#b42318;font-weight:600}
         .back{display:inline-block;margin:16px 0}
         .tsearch{width:100%;margin:0}
+        .brand{display:inline-flex;align-items:center;gap:10px}
+        .brand img{height:40px;width:auto;max-width:140px;object-fit:contain}
       `}</style>
       <header className="top">
         <div className="wrap">
-          <a className="brand" href="/">Smart Shop</a>
+          <a className="brand" href="/">
+            {logo && <img src={logo} alt={name} />}
+            <span>{name}</span>
+          </a>
           <form action={setLang} className="langs">
             {LANGS.map((l) => (
               <button key={l.code} name="lang" value={l.code} aria-pressed={lang === l.code}>{l.label}</button>
