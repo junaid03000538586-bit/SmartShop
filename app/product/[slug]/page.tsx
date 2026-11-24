@@ -6,6 +6,7 @@ import { x } from "@/lib/extra";
 import type { L } from "@/lib/cartui";
 import Top from "../../components/Top";
 import AddToCart from "../../components/AddToCart";
+import WishButton from "../../components/WishButton";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           lang={lang}
           p={{ id: p.id, slug, name: p.name, price, image: imgs[0]?.url ?? null, stock: p.stock, sizes: p.sizes ?? [], colors: p.colors ?? [] }}
         />
+        <WishButton productId={p.id} lang={lang} />
         {p.description && <p style={{ whiteSpace: "pre-line" }}>{p.description}</p>}
         <p className="muted">{tx.sku}: {p.sku}</p>
         {wa && <a className="btn" style={{ background: "#1f8f4e", color: "#fff" }} href={`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`}>{tx.ask}</a>}
