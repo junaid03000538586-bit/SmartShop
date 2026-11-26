@@ -36,8 +36,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={lang === "ur" ? "ur" : "en"} dir={lang === "ur" ? "rtl" : "ltr"}>
       <body>
+        <style>{`body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}.pg{flex:1 0 auto}footer{margin-top:40px}`}</style>
         <BarLinks lang={lang} />
-        {children}
+        <div className="pg">{children}</div>
         <Footer />
       </body>
     </html>
