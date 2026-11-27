@@ -18,7 +18,17 @@ function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
   });
 }
 
-function parseCsv(text: string): string[][] {
+function detect(text: string): string {
+  const first = text.split(/\r?\n/).find((l) => l.trim() !== "") ?? "";
+  const tabs = (first.match(/\t/g) ?? []).length;
+  const commas = (first.match(/,/g) ?? []).length;
+  const semis = (first.match(/;/g) ?? []).length;
+  if (tabs > 0 && tabs >= commas) return "\t";
+  if (semis > commas) return ";";
+  return ",";
+}
+
+function parseDelimited(text: string, d: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cur = "";
@@ -29,8 +39,8 @@ function parseCsv(text: string): string[][] {
       if (c === '"') {
         if (text[i + 1] === '"') { cur += '"'; i++; } else q = false;
       } else cur += c;
-    } else if (c === '"') q = true;
-    else if (c === ",") { row.push(cur); cur = ""; }
+    } else if (c === '"' && cur === "") q = true;
+    else if (c === d) { row.push(cur); cur = ""; }
     else if (c === "\n" || c === "\r") {
       if (c === "\r" && text[i + 1] === "\n") i++;
       row.push(cur); cur = "";
@@ -48,7 +58,8 @@ const list = (s: string) => s.split(/[|;,]/).map((x) => x.trim()).filter(Boolean
 
 const SAMPLE = `name,sku,category,price,original_price,stock,sizes,colors,description
 Black Leather Watch,W-101,Watches,2500,3000,10,,Black|Brown,Genuine leather strap
-Cotton Bed Sheet,B-201,Bed Sheets,3200,,6,Single|Double,White|Blue,100% cotton`;
+Cotton Bed Sheet,B-201,Bed Sheets,3200,,6,Single|Double,White|Blue,100% cotton
+Lawn Suit 3 Piece,C-301,Clothing,4500,5500,8,S|M|L,Green|Pink,Soft lawn fabric with printed dupatta`;
 
 export default function AdminImport() {
   const [ready, setReady] = useState(false);
@@ -62,6 +73,7 @@ export default function AdminImport() {
   const [warns, setWarns] = useState<string[]>([]);
   const [hide, setHide] = useState(true);
   const [fileKey, setFileKey] = useState(0);
+  const [pasted, setPasted] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -86,22 +98,17 @@ export default function AdminImport() {
     })();
   }, []);
 
-  async function pick(file: File | null) {
+  function analyze(raw: string) {
     setOk([]); setSkipped([]); setWarns([]); setMsg("");
-    if (!file) return;
-    let text = "";
-    try {
-      text = (await file.text()).replace(/^\uFEFF/, "");
-    } catch {
-      setMsg("Could not read this file."); return;
-    }
-    const rows = parseCsv(text);
-    if (rows.length < 2) { setMsg("The file has no product rows."); return; }
-    if (rows.length > 501) { setMsg("Maximum 500 products at a time. Please split the file."); return; }
+    const text = raw.replace(/^\uFEFF/, "");
+    if (text.trim() === "") { setMsg("Nothing to check yet. Paste your products first."); return; }
+    const rows = parseDelimited(text, detect(text));
+    if (rows.length < 2) { setMsg("I found only one line. Put the headings on the first line and one product on each line below it."); return; }
+    if (rows.length > 501) { setMsg("Maximum 500 products at a time. Please split the list."); return; }
     const head = rows[0].map((h) => h.trim().toLowerCase());
     const col = (n: string) => head.indexOf(n);
     if (col("name") < 0 || col("sku") < 0 || col("price") < 0) {
-      setMsg("The first row must have the headings name, sku and price. See the example below.");
+      setMsg("The first line must have the headings name, sku and price. Tap “Fill example” to see the format.");
       return;
     }
     const taken = new Set(skus);
@@ -137,7 +144,18 @@ export default function AdminImport() {
       });
     });
     setOk(good); setSkipped(bad); setWarns(warn);
-    if (good.length === 0) setMsg("No valid products found in this file.");
+    if (good.length === 0) setMsg("No valid products found.");
+  }
+
+  async function pickFile(file: File | null) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setPasted(text);
+      analyze(text);
+    } catch {
+      setMsg("Could not read this file.");
+    }
   }
 
   async function run() {
@@ -159,7 +177,7 @@ export default function AdminImport() {
       }
       setMsg(`${done} product(s) imported. Open Products and tap Edit to add photos${hide ? ", then Show them" : ""}.`);
       setSkus((s) => [...s, ...ok.map((r) => r.sku.toLowerCase())]);
-      setOk([]); setSkipped([]); setWarns([]); setFileKey((n) => n + 1);
+      setOk([]); setSkipped([]); setWarns([]); setPasted(""); setFileKey((n) => n + 1);
     } catch (e) {
       setMsg(`Stopped after ${done} product(s): ${(e as Error).message}`);
     } finally {
@@ -174,7 +192,9 @@ export default function AdminImport() {
       .im .card{background:#fff;border:1px solid #eceae4;border-radius:16px;padding:14px;margin:14px 0}
       .im .msg{background:#fbf3dc;border-radius:12px;padding:10px 14px;margin:12px 0}
       .im input[type=file]{width:100%;margin:8px 0 12px}
-      .im button{min-height:48px;padding:0 20px;border:0;border-radius:999px;background:#c9a24b;color:#0b1f3a;font:inherit;font-weight:700;cursor:pointer}
+      .im textarea{width:100%;min-height:200px;padding:10px 12px;margin:8px 0 12px;border:1px solid #cfcac0;border-radius:12px;font:inherit;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;background:#fff;white-space:pre;overflow:auto}
+      .im button{min-height:48px;padding:0 20px;border:0;border-radius:999px;background:#c9a24b;color:#0b1f3a;font:inherit;font-weight:700;cursor:pointer;margin-right:8px;margin-bottom:8px}
+      .im button.grey{background:#6b7280;color:#fff}
       .im button:disabled{opacity:.5}
       .im pre{white-space:pre-wrap;word-break:break-word;background:#f4f2ec;border-radius:12px;padding:10px;font-size:.82rem}
       .im .chk{display:flex;align-items:center;gap:8px;min-height:44px}
@@ -201,8 +221,22 @@ export default function AdminImport() {
       {msg && <div className="msg">{msg}</div>}
 
       <div className="card">
-        <strong>1. Choose your CSV file</strong>
-        <input key={fileKey} type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
+        <strong>1. Paste your products here</strong>
+        <p style={{ opacity: 0.7, margin: "6px 0" }}>First line: the headings. Then one product on each line.</p>
+        <textarea
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          placeholder={"name,sku,category,price,original_price,stock,sizes,colors,description"}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <button onClick={() => analyze(pasted)}>Check pasted text</button>
+        <button className="grey" onClick={() => { setPasted(SAMPLE); setOk([]); setSkipped([]); setWarns([]); setMsg(""); }}>Fill example</button>
+        <button className="grey" onClick={() => { setPasted(""); setOk([]); setSkipped([]); setWarns([]); setMsg(""); }}>Clear</button>
+        <hr />
+        <strong>Or choose a file</strong>
+        <input key={fileKey} type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
         <p style={{ opacity: 0.7, margin: 0 }}>Photos are not imported. Add them later with Edit on the Products page.</p>
       </div>
 
@@ -219,9 +253,9 @@ export default function AdminImport() {
       )}
 
       <div className="card">
-        <strong>How to make the file</strong>
-        <p>Make a sheet in Google Sheets or Excel with these headings in the first row, then download it as CSV.</p>
-        <p>Required: <b>name</b>, <b>sku</b>, <b>price</b>. Optional: category, original_price, stock, sizes, colors, description. Separate several sizes or colors with | (for example Black|Brown). Category must match a category name exactly.</p>
+        <strong>How to write the list</strong>
+        <p>Required: <b>name</b>, <b>sku</b>, <b>price</b>. Optional: category, original_price, stock, sizes, colors, description.</p>
+        <p>Separate the fields with a comma. If a field is empty, keep its comma (for example two commas in a row). Separate several sizes or colors with | (for example Black|Brown). Do not use a comma inside the description. Category must match a category name exactly.</p>
         <pre>{SAMPLE}</pre>
       </div>
     </main>
