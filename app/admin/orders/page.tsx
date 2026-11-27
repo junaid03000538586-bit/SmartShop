@@ -43,6 +43,28 @@ function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
   });
 }
 
+/* Messages for the WhatsApp status update. Change the wording here if you like. */
+function statusMsg(o: Order, store: string, origin: string): string {
+  const link = `${origin}/track?o=${encodeURIComponent(o.order_number)}`;
+  const head = `Assalam o Alaikum ${o.customer_name}!`;
+  const total = rs(o.total);
+  const tail = `\n\nOrder ka status yahan dekhein:\n${link}\n(Order number mein ye number aur apna phone number likhein.)`;
+  switch (o.status) {
+    case "confirmed":
+      return `${head} ${store} par aap ka order ${o.order_number} confirm ho gaya hai.\nTotal: ${total} (Cash on Delivery, order milne par payment karein).${tail}`;
+    case "processing":
+      return `${head} ${store} par aap ka order ${o.order_number} tayyar kiya ja raha hai.${tail}`;
+    case "shipped":
+      return `${head} ${store} par aap ka order ${o.order_number} rawana kar diya gaya hai. Aam tor par ye 5 se 6 din mein pohanch jata hai.\nTotal: ${total} (Cash on Delivery).${tail}`;
+    case "delivered":
+      return `${head} aap ka order ${o.order_number} pohanch gaya hai. ${store} se khareedari ka shukriya! Koi masla ho to isi chat mein bata dein.`;
+    case "cancelled":
+      return `${head} aap ka order ${o.order_number} cancel kar diya gaya hai. Koi sawal ho to isi chat mein bata dein.`;
+    default:
+      return `${head} ${store} par aap ka order ${o.order_number} humein mil gaya hai. Hum jald confirm karenge.${tail}`;
+  }
+}
+
 export default function AdminOrders() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -59,6 +81,7 @@ export default function AdminOrders() {
   const [lines, setLines] = useState<Line[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteText, setNoteText] = useState("");
+  const [store, setStore] = useState("Smart Shop");
 
   const loadStats = useCallback(async () => {
     const count = async (st?: string, archived?: boolean) => {
@@ -101,7 +124,11 @@ export default function AdminOrders() {
           const { data, error } = await withTimeout(supabase.rpc("is_admin"), 15000);
           if (error) setMsg(error.message);
           setIsAdmin(data === true);
-          if (data === true) loadStats();
+          if (data === true) {
+            loadStats();
+            const { data: n } = await supabase.from("store_settings").select("value").eq("key", "store_name").maybeSingle();
+            if (n?.value && String(n.value).trim()) setStore(String(n.value).trim());
+          }
         }
       } catch (e) {
         setMsg((e as Error).message);
@@ -130,7 +157,7 @@ export default function AdminOrders() {
     if (next === o.status) return;
     if (next === "cancelled" && !confirm("Cancel this order? Stock will be returned. A cancelled order cannot be reopened.")) return;
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", o.id);
-    setMsg(error ? error.message : "Status updated.");
+    setMsg(error ? error.message : "Status updated. Now tap “Send status update” to tell the customer on WhatsApp.");
     await loadOrders();
     loadStats();
   }
@@ -198,6 +225,8 @@ export default function AdminOrders() {
       </main>
     );
 
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
   return (
     <main className="ao">
       {css}
@@ -261,7 +290,8 @@ export default function AdminOrders() {
 
               <p><strong>Customer</strong><br />{o.customer_name}<br />Phone: {o.phone}<br />WhatsApp: {o.whatsapp ?? o.phone}</p>
               <div className="row">
-                <a className="b green" href={`https://wa.me/${waDigits(o.whatsapp ?? o.phone)}?text=${encodeURIComponent(`Hello ${o.customer_name}, regarding your Smart Shop order ${o.order_number}.`)}`}>WhatsApp</a>
+                <a className="b green" href={`https://wa.me/${waDigits(o.whatsapp ?? o.phone)}?text=${encodeURIComponent(statusMsg(o, store, origin))}`}>Send status update</a>
+                <a className="b" href={`https://wa.me/${waDigits(o.whatsapp ?? o.phone)}`}>WhatsApp chat</a>
                 <a className="b" href={`tel:${o.phone}`}>Call</a>
               </div>
 
