@@ -2,9 +2,9 @@ import { cookies } from "next/headers";
 import { getSupabase } from "@/lib/supabase";
 
 const T = {
-  en: { about: "About us", contact: "Contact us", ret: "Return & exchange", priv: "Privacy policy", terms: "Terms & conditions", find: "Find a product for me", cod: "Cash on Delivery across Pakistan.", follow: "Follow us" },
-  ro: { about: "Hamare baare mein", contact: "Rabta karein", ret: "Return aur exchange", priv: "Privacy policy", terms: "Terms aur conditions", find: "Mere liye product dhoondein", cod: "Poore Pakistan mein Cash on Delivery.", follow: "Hamein follow karein" },
-  ur: { about: "ہمارے بارے میں", contact: "رابطہ کریں", ret: "واپسی اور تبادلہ", priv: "پرائیویسی پالیسی", terms: "شرائط و ضوابط", find: "میرے لیے پروڈکٹ تلاش کریں", cod: "پورے پاکستان میں کیش آن ڈیلیوری۔", follow: "ہمیں فالو کریں" },
+  en: { track: "Track your order", find: "Find a product for me", about: "About us", contact: "Contact us", ret: "Return & exchange", priv: "Privacy policy", terms: "Terms & conditions", cod: "Cash on Delivery across Pakistan.", follow: "Follow us" },
+  ro: { track: "Order track karein", find: "Mere liye product dhoondein", about: "Hamare baare mein", contact: "Rabta karein", ret: "Return aur exchange", priv: "Privacy policy", terms: "Terms aur conditions", cod: "Poore Pakistan mein Cash on Delivery.", follow: "Hamein follow karein" },
+  ur: { track: "آرڈر ٹریک کریں", find: "میرے لیے پروڈکٹ تلاش کریں", about: "ہمارے بارے میں", contact: "رابطہ کریں", ret: "واپسی اور تبادلہ", priv: "پرائیویسی پالیسی", terms: "شرائط و ضوابط", cod: "پورے پاکستان میں کیش آن ڈیلیوری۔", follow: "ہمیں فالو کریں" },
 };
 
 export default async function Footer() {
@@ -28,6 +28,7 @@ export default async function Footer() {
       <div className="wrap">
         <style>{`.fl{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin:8px 0}.fl a{display:inline-flex;align-items:center;min-height:44px;color:#fff;text-decoration:underline}.fl.fs a{color:#c9a24b}`}</style>
         <div className="fl">
+          <a href="/track">{t.track}</a>
           <a href="/request">{t.find}</a>
           <a href="/info/about">{t.about}</a>
           <a href="/info/contact">{t.contact}</a>
